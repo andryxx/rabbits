@@ -1,0 +1,104 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    hostname: rabbitmq
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    environment:
+      RABBITMQ_DEFAULT_USER: rabbit
+      RABBITMQ_DEFAULT_PASS: rabbit
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    hostname: redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  producer:
+    build: ./producer
+    hostname: producer
+    ports:
+      - '3000:3000'
+    environment:
+      rabbit_logLevel: debug
+      rabbit_prettyLogs: 'true'
+      rabbit_amqpUrl: amqp://rabbit:rabbit@rabbitmq:5672
+      rabbit_exchangeRabbits: rabbits
+      rabbit_publishRoutingKey: rabbit.born
+      rabbit_domain: localhost
+      rabbit_port: '3000'
+      rabbit_keepAliveTimeout: '62000'
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  consumer:
+    build: ./consumer
+    hostname: consumer
+    ports:
+      - '3001:3001'
+    environment:
+      rabbit_logLevel: debug
+      rabbit_prettyLogs: 'true'
+      rabbit_amqpUrl: amqp://rabbit:rabbit@rabbitmq:5672
+      rabbit_exchangeRabbits: rabbits
+      rabbit_topicRoutingKey: '#'
+      rabbit_consumerQueue: rabbit.consumer.rabbits
+      rabbit_exchangeTelegram: telegram
+      rabbit_publishTelegramRoutingKey: telegram.notify
+      rabbit_publishTelegramDirectRoutingKey: telegram.direct
+      rabbit_consumerTelegramCallbackQueue: rabbit.consumer.telegram.callback
+      rabbit_telegramCallbackRoutingKey: telegram.rabbit.callback
+      rabbit_consumeMaxAttempts: '3'
+      rabbit_redisUrl: redis://redis:6379
+      rabbit_domain: localhost
+      rabbit_port: '3001'
+      rabbit_keepAliveTimeout: '62000'
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  telegram-service:
+    build: ./telegram-service
+    hostname: telegram-service
+    ports:
+      - '3020:3020'
+    environment:
+      rabbit_logLevel: debug
+      rabbit_prettyLogs: 'true'
+      rabbit_amqpUrl: amqp://rabbit:rabbit@rabbitmq:5672
+      rabbit_exchangeTelegram: telegram
+      rabbit_consumerTelegramQueue: rabbit.consumer.telegram
+      rabbit_topicTelegramRoutingKey: telegram.*
+      rabbit_publishTelegramCallbackRoutingKey: telegram.rabbit.callback
+      rabbit_redisUrl: redis://redis:6379
+      rabbit_redisTelegramSubscribersKey: telegram:bot:subscribers
+      rabbit_port: '3020'
+      rabbit_telegramBotToken: 8696156752:AAE8le59T2S6TeVgAeIFBGsT77QmyFHa5Pk
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  rabbitmq_data:
+  redis_data:
